@@ -12,7 +12,7 @@ It is designed to run beside a Docker Compose Windrose server, especially the ex
 - Add local display labels for saves.
 - Edit session name.
 - Set, replace, or remove the server password.
-- Edit advanced world settings such as world preset, enemy scaling, co-op scaling, and exploration behavior.
+- Edit advanced world settings, including `Easy`/`Medium`/`Hard`/`Custom` presets, enemy health/damage scaling, ship scaling, boarding difficulty, co-op scaling, shared quests, and immersive exploration.
 - Back up the current world or `ServerDescription.json` before destructive changes.
 - Stop/start the Windrose Docker Compose service when changes require it.
 
