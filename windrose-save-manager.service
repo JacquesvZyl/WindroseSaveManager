@@ -1,0 +1,18 @@
+[Unit]
+Description=Windrose Save Manager
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/windrose-save-manager
+ExecStart=/usr/bin/dotnet /opt/windrose-save-manager/WindroseSaveManager.dll
+Restart=always
+RestartSec=5
+User=root
+Environment=ASPNETCORE_URLS=http://0.0.0.0:5085
+Environment=DOTNET_ENVIRONMENT=Production
+
+[Install]
+WantedBy=multi-user.target

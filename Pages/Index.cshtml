@@ -1,0 +1,128 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Windrose Save Manager";
+}
+
+<div class="loading-overlay" data-loading-overlay hidden>
+    <div class="loading-panel" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <h2 data-loading-title>Working...</h2>
+        <p data-loading-message>Please keep this page open.</p>
+    </div>
+</div>
+
+<section class="hero">
+    <div>
+        <p class="eyebrow">Windrose</p>
+        <h1>Save Manager</h1>
+    </div>
+    <form method="post" asp-page-handler="Backup" data-loading-message="Backing up the active Windrose world...">
+        <button class="button secondary" type="submit">Backup Active World</button>
+    </form>
+</section>
+
+@if (Model.LastOperation is not null)
+{
+    <div class="notice @(Model.LastOperation.Succeeded ? "success" : "danger")">
+        @Model.LastOperation.Message
+    </div>
+}
+
+@if (Model.State?.Warnings.Count > 0)
+{
+    foreach (var warning in Model.State.Warnings)
+    {
+        <div class="notice warning">@warning</div>
+    }
+}
+
+<section class="import-panel">
+    <div>
+        <h2>Import World Zip</h2>
+        <p>Upload a zip containing one Windrose world folder. The friendly name is read from WorldDescription.json.</p>
+    </div>
+    <form method="post" asp-page-handler="Import" enctype="multipart/form-data" data-loading-message="Importing the Windrose world zip...">
+        <input type="file" name="WorldZip" accept=".zip" required />
+        <button class="button" type="submit">Import Zip</button>
+    </form>
+</section>
+
+<section class="summary">
+    <div>
+        <span>Active World</span>
+        <strong>@(Model.State?.ActiveWorldName ?? "Unknown")</strong>
+    </div>
+    <div>
+        <span>World ID</span>
+        <code>@(Model.State?.ActiveWorldId ?? "Not set")</code>
+    </div>
+    <div>
+        <span>Worlds Folder</span>
+        <code>@(Model.State?.WorldsRoot ?? "Not found")</code>
+    </div>
+</section>
+
+<section class="worlds">
+    <div class="section-heading">
+        <h2>Available Worlds</h2>
+        <span>@(Model.State?.Worlds.Count ?? 0) found</span>
+    </div>
+
+    @if (Model.State?.Worlds.Count > 0)
+    {
+        <div class="world-grid">
+            @foreach (var world in Model.State.Worlds)
+            {
+                <article class="world-card @(world.IsActive ? "active" : "")">
+                    <div>
+                        <h3>@world.Name</h3>
+                        <code>@world.Id</code>
+                    </div>
+                    <dl>
+                        <div>
+                            <dt>Version</dt>
+                            <dd>@world.Version</dd>
+                        </div>
+                        <div>
+                            <dt>Modified</dt>
+                            <dd>@world.LastModified.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd>
+                        </div>
+                    </dl>
+                    @if (!string.IsNullOrWhiteSpace(world.GameName) || !string.IsNullOrWhiteSpace(world.Alias))
+                    {
+                        <p class="world-meta">
+                            Game name: @(world.GameName ?? "Unknown")
+                            @if (!string.IsNullOrWhiteSpace(world.Alias))
+                            {
+                                <span>Label: @world.Alias</span>
+                            }
+                        </p>
+                    }
+
+                    <form class="alias-form" method="post" asp-page-handler="SaveAlias" data-loading-message="Saving the display label...">
+                        <input type="hidden" name="WorldId" value="@world.Id" />
+                        <input type="text" name="Alias" value="@world.Alias" placeholder="Optional display label" />
+                        <button class="button secondary" type="submit">Save Label</button>
+                    </form>
+
+                    @if (world.IsActive)
+                    {
+                        <span class="active-pill">Active</span>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Activate" data-loading-message="Switching to @world.Name. Backing up, stopping Windrose, activating the world, and starting the server again...">
+                            <input type="hidden" name="WorldId" value="@world.Id" />
+                            <button class="button" type="submit">Activate</button>
+                        </form>
+                    }
+                </article>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty">No worlds were found. Check the configured Windrose server path.</div>
+    }
+</section>
