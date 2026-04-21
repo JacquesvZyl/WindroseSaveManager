@@ -13,9 +13,15 @@ public sealed record WorldInfo(
 public sealed record SaveManagerState(
     string? ActiveWorldId,
     string? ActiveWorldName,
+    ServerSettings Settings,
     string? ServerDescriptionPath,
     string? WorldsRoot,
     IReadOnlyList<WorldInfo> Worlds,
     IReadOnlyList<string> Warnings);
+
+public sealed record ServerSettings(
+    string? ServerName,
+    bool IsPasswordProtected,
+    bool HasPassword);
 
 public sealed record OperationResult(bool Succeeded, string Message);

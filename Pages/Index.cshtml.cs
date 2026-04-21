@@ -24,6 +24,21 @@ public class IndexModel : PageModel
     [BindProperty]
     public IFormFile? WorldZip { get; set; }
 
+    [BindProperty]
+    public string? ServerName { get; set; }
+
+    [BindProperty]
+    public bool UpdateServerName { get; set; }
+
+    [BindProperty]
+    public string? ServerPassword { get; set; }
+
+    [BindProperty]
+    public bool UpdatePassword { get; set; }
+
+    [BindProperty]
+    public bool ClearPassword { get; set; }
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         State = await _worlds.GetStateAsync(cancellationToken);
@@ -53,6 +68,19 @@ public class IndexModel : PageModel
     public async Task<IActionResult> OnPostSaveAliasAsync(CancellationToken cancellationToken)
     {
         LastOperation = await _worlds.SetAliasAsync(WorldId ?? string.Empty, Alias, cancellationToken);
+        State = await _worlds.GetStateAsync(cancellationToken);
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostSaveServerSettingsAsync(CancellationToken cancellationToken)
+    {
+        LastOperation = await _worlds.UpdateServerSettingsAsync(
+            ServerName,
+            UpdateServerName,
+            ServerPassword,
+            UpdatePassword,
+            ClearPassword,
+            cancellationToken);
         State = await _worlds.GetStateAsync(cancellationToken);
         return Page();
     }

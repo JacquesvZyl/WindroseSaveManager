@@ -197,7 +197,7 @@ code {
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
   margin: 22px 0 32px;
 }
@@ -237,6 +237,7 @@ code {
 }
 
 .summary > div,
+.settings-panel,
 .world-card,
 .empty {
   border: 1px solid var(--line);
@@ -270,6 +271,51 @@ dt {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+}
+
+.section-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.settings-panel {
+  margin: 0 0 32px;
+  padding: 18px;
+}
+
+.settings-panel form {
+  display: grid;
+  grid-template-columns: minmax(180px, auto) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.settings-panel input[type="text"],
+.settings-panel input[type="password"] {
+  min-height: 42px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 10px;
+}
+
+.settings-panel .button {
+  grid-column: 2;
+  width: fit-content;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
 }
 
 .world-grid {
@@ -359,5 +405,14 @@ dd {
 
   .summary {
     grid-template-columns: 1fr;
+  }
+
+  .settings-panel form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-panel .button {
+    grid-column: auto;
+    width: 100%;
   }
 }

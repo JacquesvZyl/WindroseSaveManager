@@ -61,6 +61,44 @@
         <span>Worlds Folder</span>
         <code>@(Model.State?.WorldsRoot ?? "Not found")</code>
     </div>
+    <div>
+        <span>Session Name</span>
+        <strong>@(Model.State?.Settings.ServerName ?? "Not set")</strong>
+    </div>
+    <div>
+        <span>Password</span>
+        <strong>@(Model.State?.Settings.IsPasswordProtected == true || Model.State?.Settings.HasPassword == true ? "Protected" : "Open")</strong>
+    </div>
+</section>
+
+<section class="settings-panel">
+    <div class="section-heading">
+        <div>
+            <h2>Server Settings</h2>
+            <p>Only checked fields are saved. Unchecked values are left unchanged.</p>
+        </div>
+    </div>
+
+    <form method="post" asp-page-handler="SaveServerSettings" data-loading-message="Stopping Windrose, saving server settings, and starting the server again...">
+        <label class="check-row">
+            <input type="checkbox" name="UpdateServerName" value="true" />
+            <span>Update session name</span>
+        </label>
+        <input type="text" name="ServerName" value="@Model.State?.Settings.ServerName" placeholder="Windrose session name" />
+
+        <label class="check-row">
+            <input type="checkbox" name="UpdatePassword" value="true" />
+            <span>Set or replace password</span>
+        </label>
+        <input type="password" name="ServerPassword" placeholder="New server password" autocomplete="new-password" />
+
+        <label class="check-row">
+            <input type="checkbox" name="ClearPassword" value="true" />
+            <span>Remove password protection</span>
+        </label>
+
+        <button class="button" type="submit">Save Server Settings</button>
+    </form>
 </section>
 
 <section class="worlds">

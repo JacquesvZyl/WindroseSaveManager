@@ -28,6 +28,9 @@ public sealed class WindroseWorldService
         var activeWorldId = File.Exists(serverDescriptionPath)
             ? await ReadJsonValueAsync(serverDescriptionPath, "WorldIslandId", cancellationToken)
             : null;
+        var settings = File.Exists(serverDescriptionPath)
+            ? await ReadServerSettingsAsync(serverDescriptionPath, cancellationToken)
+            : new ServerSettings(null, false, false);
 
         if (!File.Exists(serverDescriptionPath))
         {
@@ -38,7 +41,7 @@ public sealed class WindroseWorldService
         if (worldsRoot is null)
         {
             warnings.Add($"No Worlds folder was found under {_options.ServerRoot}/R5/Saved/SaveProfiles/Default/RocksDB.");
-            return new SaveManagerState(activeWorldId, null, serverDescriptionPath, null, [], warnings);
+            return new SaveManagerState(activeWorldId, null, settings, serverDescriptionPath, null, [], warnings);
         }
 
         var worlds = new List<WorldInfo>();
@@ -71,7 +74,87 @@ public sealed class WindroseWorldService
         }
 
         var activeWorldName = worlds.FirstOrDefault(world => world.IsActive)?.Name;
-        return new SaveManagerState(activeWorldId, activeWorldName, serverDescriptionPath, worldsRoot, worlds, warnings);
+        return new SaveManagerState(activeWorldId, activeWorldName, settings, serverDescriptionPath, worldsRoot, worlds, warnings);
+    }
+
+    public async Task<OperationResult> UpdateServerSettingsAsync(
+        string? serverName,
+        bool updateServerName,
+        string? password,
+        bool updatePassword,
+        bool clearPassword,
+        CancellationToken cancellationToken)
+    {
+        if (!updateServerName && !updatePassword && !clearPassword)
+        {
+            return new OperationResult(false, "Choose at least one setting to update.");
+        }
+
+        if (updatePassword && clearPassword)
+        {
+            return new OperationResult(false, "Choose either set password or clear password, not both.");
+        }
+
+        if (updatePassword && string.IsNullOrWhiteSpace(password))
+        {
+            return new OperationResult(false, "Enter a password, or choose clear password.");
+        }
+
+        var serverDescriptionPath = GetServerDescriptionPath();
+        if (!File.Exists(serverDescriptionPath))
+        {
+            return new OperationResult(false, $"ServerDescription.json was not found at {serverDescriptionPath}.");
+        }
+
+        if (_options.ManageContainer)
+        {
+            var stop = await RunComposeAsync("stop", cancellationToken);
+            if (!stop.Succeeded)
+            {
+                return new OperationResult(false, $"Could not stop the Windrose container. {stop.ErrorOrOutput}");
+            }
+        }
+
+        try
+        {
+            var backupPath = await BackupServerDescriptionAsync(cancellationToken);
+            var root = await ReadJsonAsync(serverDescriptionPath, cancellationToken);
+
+            if (updateServerName)
+            {
+                SetServerDescriptionValue(root, "ServerName", serverName?.Trim() ?? string.Empty);
+            }
+
+            if (clearPassword)
+            {
+                SetServerDescriptionValue(root, "Password", string.Empty);
+                SetServerDescriptionValue(root, "IsPasswordProtected", false);
+            }
+            else if (updatePassword)
+            {
+                SetServerDescriptionValue(root, "Password", password!.Trim());
+                SetServerDescriptionValue(root, "IsPasswordProtected", true);
+            }
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            await File.WriteAllTextAsync(serverDescriptionPath, root.ToJsonString(options), cancellationToken);
+
+            if (_options.ManageContainer)
+            {
+                var start = await RunComposeAsync("up -d", cancellationToken);
+                if (!start.Succeeded)
+                {
+                    return new OperationResult(false, $"Settings were updated, but the container did not start. {start.ErrorOrOutput}");
+                }
+            }
+
+            return new OperationResult(true, $"Server settings saved. Backup saved to {backupPath}.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update server settings");
+            return new OperationResult(false, ex.Message);
+        }
     }
 
     public async Task<OperationResult> ImportWorldZipAsync(IFormFile? zipFile, CancellationToken cancellationToken)
@@ -277,6 +360,25 @@ public sealed class WindroseWorldService
         return backupPath;
     }
 
+    private async Task<string> BackupServerDescriptionAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_options.BackupsRoot);
+
+        var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var backupPath = Path.Combine(_options.BackupsRoot, $"{stamp}-server-settings");
+        Directory.CreateDirectory(backupPath);
+
+        var serverDescriptionPath = GetServerDescriptionPath();
+        File.Copy(serverDescriptionPath, Path.Combine(backupPath, "ServerDescription.json"), overwrite: false);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(backupPath, "backup-info.txt"),
+            $"CreatedUtc={DateTimeOffset.UtcNow:O}{Environment.NewLine}Type=ServerSettings{Environment.NewLine}",
+            cancellationToken);
+
+        return backupPath;
+    }
+
     private async Task SetActiveWorldIdAsync(string worldId, CancellationToken cancellationToken)
     {
         var serverDescriptionPath = GetServerDescriptionPath();
@@ -301,6 +403,19 @@ public sealed class WindroseWorldService
 
         var options = new JsonSerializerOptions { WriteIndented = true };
         await File.WriteAllTextAsync(serverDescriptionPath, root.ToJsonString(options), cancellationToken);
+    }
+
+    private async Task<ServerSettings> ReadServerSettingsAsync(string serverDescriptionPath, CancellationToken cancellationToken)
+    {
+        var root = await ReadJsonAsync(serverDescriptionPath, cancellationToken);
+        var serverName = TryFindJsonValue(root, "ServerName");
+        var password = TryFindJsonValue(root, "Password");
+        var isPasswordProtected = TryFindJsonBool(root, "IsPasswordProtected") ?? !string.IsNullOrEmpty(password);
+
+        return new ServerSettings(
+            string.IsNullOrWhiteSpace(serverName) ? null : serverName,
+            isPasswordProtected,
+            !string.IsNullOrEmpty(password));
     }
 
     private string GetServerDescriptionPath()
@@ -395,6 +510,106 @@ public sealed class WindroseWorldService
     }
 
     private static bool TrySetJsonValue(JsonNode? node, string propertyName, string value)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (var property in obj.ToArray())
+            {
+                if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    obj[property.Key] = value;
+                    return true;
+                }
+
+                if (TrySetJsonValue(property.Value, propertyName, value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                if (TrySetJsonValue(item, propertyName, value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool? TryFindJsonBool(JsonNode? node, string propertyName)
+    {
+        return TryFindJsonBoolValue(node, propertyName, out var value) ? value : null;
+    }
+
+    private static bool TryFindJsonBoolValue(JsonNode? node, string propertyName, out bool value)
+    {
+        value = false;
+
+        if (node is JsonObject obj)
+        {
+            foreach (var property in obj)
+            {
+                if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                    property.Value is not null &&
+                    property.Value.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
+                {
+                    value = property.Value.GetValue<bool>();
+                    return true;
+                }
+
+                if (TryFindJsonBoolValue(property.Value, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                if (TryFindJsonBoolValue(item, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static void SetServerDescriptionValue(JsonNode root, string propertyName, JsonNode? value)
+    {
+        if (TrySetJsonValue(root, propertyName, value))
+        {
+            return;
+        }
+
+        if (root is not JsonObject rootObject)
+        {
+            throw new InvalidOperationException("ServerDescription.json must contain a JSON object.");
+        }
+
+        if (rootObject["ServerDescription_Persistent"] is JsonObject persistentDescription)
+        {
+            persistentDescription[propertyName] = value;
+            return;
+        }
+
+        if (rootObject["ServerDescription"] is JsonObject description)
+        {
+            description[propertyName] = value;
+            return;
+        }
+
+        rootObject[propertyName] = value;
+    }
+
+    private static bool TrySetJsonValue(JsonNode? node, string propertyName, JsonNode? value)
     {
         if (node is JsonObject obj)
         {

@@ -17,6 +17,7 @@ It is designed for this layout:
 - Imports a zipped world folder.
 - Stores optional local labels in `/opt/windrose/world-labels.json`.
 - Shows the currently active world from `ServerDescription.json`.
+- Updates the server session name and password when explicitly requested.
 - Creates a timestamped backup before switching.
 - Stops the `windrose` Docker Compose service.
 - Updates `WorldIslandId`.
@@ -44,6 +45,37 @@ The app displays `WorldName` by default. If you want a clearer admin label, save
 ```
 
 The actual world folder ID is never renamed.
+
+## Session Name And Password
+
+The app can update these `ServerDescription.json` fields:
+
+```json
+{
+  "ServerDescription_Persistent": {
+    "ServerName": "My Windrose Server",
+    "IsPasswordProtected": true,
+    "Password": "example-password"
+  }
+}
+```
+
+Windrose expects `ServerDescription.json` to be changed while the server is stopped. When you save server settings, the app:
+
+1. Stops the `windrose` Docker Compose service.
+2. Backs up the current `ServerDescription.json`.
+3. Updates only the checked settings.
+4. Starts the `windrose` service again.
+
+The settings form is intentionally explicit:
+
+- Check `Update session name` to overwrite `ServerName`.
+- Leave it unchecked to preserve the current session name.
+- Check `Set or replace password` and enter a password to overwrite the password.
+- Leave it unchecked to preserve the current password.
+- Check `Remove password protection` to clear `Password` and set `IsPasswordProtected` to `false`.
+
+Blank password fields do not overwrite an existing password unless you explicitly choose `Remove password protection`.
 
 ## Importing A World Zip
 
