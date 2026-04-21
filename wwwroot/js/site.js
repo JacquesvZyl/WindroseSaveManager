@@ -27,3 +27,22 @@ document.querySelectorAll("form[method='post']").forEach((form) => {
     });
   });
 });
+
+document.querySelectorAll("[data-preset-select]").forEach((presetSelect) => {
+  const form = presetSelect.closest("form");
+  if (!form) {
+    return;
+  }
+
+  const syncCustomFields = () => {
+    const isCustom = presetSelect.value.toLowerCase() === "custom";
+    form.classList.toggle("custom-settings-disabled", !isCustom);
+
+    form.querySelectorAll("[data-custom-setting]").forEach((field) => {
+      field.disabled = !isCustom;
+    });
+  };
+
+  presetSelect.addEventListener("change", syncCustomFields);
+  syncCustomFields();
+});

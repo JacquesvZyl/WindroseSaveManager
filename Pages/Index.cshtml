@@ -155,6 +155,109 @@
                             <button class="button" type="submit">Activate</button>
                         </form>
                     }
+
+                    <details class="advanced-settings">
+                        <summary>Advanced World Settings</summary>
+                        <form method="post" asp-page-handler="SaveWorldSettings" data-loading-message="@(world.IsActive ? $"Stopping Windrose, backing up {world.Name}, saving world settings, and starting the server again..." : $"Backing up and saving settings for inactive world {world.Name}. The running server will not be restarted.")">
+                            <input type="hidden" name="WorldId" value="@world.Id" />
+
+                            <label>
+                                <span>Preset</span>
+                                <select name="PresetType" data-preset-select>
+                                    <option value="Easy" selected="@(world.Settings.PresetType.Equals("Easy", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Easy</option>
+                                    <option value="Medium" selected="@(world.Settings.PresetType.Equals("Medium", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Medium</option>
+                                    <option value="Hard" selected="@(world.Settings.PresetType.Equals("Hard", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Hard</option>
+                                    <option value="Custom" selected="@(world.Settings.PresetType.Equals("Custom", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Custom</option>
+                                </select>
+                            </label>
+
+                            <p class="world-meta">Custom parameters only apply when preset is Custom. Non-custom presets save empty WorldSettings.</p>
+
+                            <label>
+                                <span class="field-label">
+                                    Shared co-op quests
+                                    <button class="help-button" type="button" aria-label="Shared co-op quests help" data-tooltip="When a player completes a co-op quest, it auto-completes for all players who have it active.">?</button>
+                                </span>
+                                <select name="SharedQuests" data-custom-setting>
+                                    <option value="true" selected="@(world.Settings.SharedQuests ? "selected" : null)">True</option>
+                                    <option value="false" selected="@(!world.Settings.SharedQuests ? "selected" : null)">False</option>
+                                </select>
+                            </label>
+
+                            <label>
+                                <span class="field-label">
+                                    Immersive exploration
+                                    <button class="help-button" type="button" aria-label="Immersive exploration help" data-tooltip="Hides map markers for points of interest, making exploration harder. Called Immersive Exploration in-game.">?</button>
+                                </span>
+                                <select name="EasyExplore" data-custom-setting>
+                                    <option value="true" selected="@(world.Settings.EasyExplore ? "selected" : null)">True</option>
+                                    <option value="false" selected="@(!world.Settings.EasyExplore ? "selected" : null)">False</option>
+                                </select>
+                            </label>
+
+                            <div class="settings-grid">
+                                <label>
+                                    <span class="field-label">
+                                        Enemy health
+                                        <button class="help-button" type="button" aria-label="Enemy health help" data-tooltip="Enemy health multiplier. Default 1.0. Range 0.2 to 5.0.">?</button>
+                                    </span>
+                                    <input type="number" name="MobHealthMultiplier" min="0.2" max="5" step="0.01" value="@Model.FormatNumber(world.Settings.MobHealthMultiplier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span class="field-label">
+                                        Enemy damage
+                                        <button class="help-button" type="button" aria-label="Enemy damage help" data-tooltip="Enemy damage multiplier. Default 1.0. Range 0.2 to 5.0.">?</button>
+                                    </span>
+                                    <input type="number" name="MobDamageMultiplier" min="0.2" max="5" step="0.01" value="@Model.FormatNumber(world.Settings.MobDamageMultiplier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span class="field-label">
+                                        Enemy ship health
+                                        <button class="help-button" type="button" aria-label="Enemy ship health help" data-tooltip="Enemy ship health multiplier. Default 1.0. Range 0.4 to 5.0.">?</button>
+                                    </span>
+                                    <input type="number" name="ShipsHealthMultiplier" min="0.4" max="5" step="0.01" value="@Model.FormatNumber(world.Settings.ShipsHealthMultiplier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span class="field-label">
+                                        Enemy ship damage
+                                        <button class="help-button" type="button" aria-label="Enemy ship damage help" data-tooltip="Enemy ship damage multiplier. Default 1.0. Range 0.2 to 2.5.">?</button>
+                                    </span>
+                                    <input type="number" name="ShipsDamageMultiplier" min="0.2" max="2.5" step="0.01" value="@Model.FormatNumber(world.Settings.ShipsDamageMultiplier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span class="field-label">
+                                        Boarding difficulty
+                                        <button class="help-button" type="button" aria-label="Boarding difficulty help" data-tooltip="How many enemy sailors must be defeated to win a boarding action. Default 1.0. Range 0.2 to 5.0.">?</button>
+                                    </span>
+                                    <input type="number" name="BoardingDifficultyMultiplier" min="0.2" max="5" step="0.01" value="@Model.FormatNumber(world.Settings.BoardingDifficultyMultiplier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span class="field-label">
+                                        Co-op enemy scaling
+                                        <button class="help-button" type="button" aria-label="Co-op enemy scaling help" data-tooltip="Adjusts enemy health and posture loss based on player count. Default 1.0. Range 0.0 to 2.0.">?</button>
+                                    </span>
+                                    <input type="number" name="CoopStatsCorrectionModifier" min="0" max="2" step="0.01" value="@Model.FormatNumber(world.Settings.CoopStatsCorrectionModifier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span class="field-label">
+                                        Co-op ship scaling
+                                        <button class="help-button" type="button" aria-label="Co-op ship scaling help" data-tooltip="Adjusts enemy ship health based on player count. Default 0.0. Range 0.0 to 2.0.">?</button>
+                                    </span>
+                                    <input type="number" name="CoopShipStatsCorrectionModifier" min="0" max="2" step="0.01" value="@Model.FormatNumber(world.Settings.CoopShipStatsCorrectionModifier)" data-custom-setting />
+                                </label>
+                                <label>
+                                    <span>Combat difficulty</span>
+                                    <select name="CombatDifficulty" data-custom-setting>
+                                        <option value="Easy" selected="@(world.Settings.CombatDifficulty.Equals("Easy", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Easy</option>
+                                        <option value="Normal" selected="@(world.Settings.CombatDifficulty.Equals("Normal", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Normal</option>
+                                        <option value="Hard" selected="@(world.Settings.CombatDifficulty.Equals("Hard", StringComparison.OrdinalIgnoreCase) ? "selected" : null)">Hard</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <button class="button secondary" type="submit">Save World Settings</button>
+                        </form>
+                    </details>
                 </article>
             }
         </div>

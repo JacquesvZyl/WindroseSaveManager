@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using System.Globalization;
 
 namespace WindroseSaveManager.Pages;
 
@@ -38,6 +39,39 @@ public class IndexModel : PageModel
 
     [BindProperty]
     public bool ClearPassword { get; set; }
+
+    [BindProperty]
+    public string PresetType { get; set; } = "Medium";
+
+    [BindProperty]
+    public bool SharedQuests { get; set; }
+
+    [BindProperty]
+    public bool EasyExplore { get; set; }
+
+    [BindProperty]
+    public double MobHealthMultiplier { get; set; }
+
+    [BindProperty]
+    public double MobDamageMultiplier { get; set; }
+
+    [BindProperty]
+    public double ShipsHealthMultiplier { get; set; }
+
+    [BindProperty]
+    public double ShipsDamageMultiplier { get; set; }
+
+    [BindProperty]
+    public double BoardingDifficultyMultiplier { get; set; }
+
+    [BindProperty]
+    public double CoopStatsCorrectionModifier { get; set; }
+
+    [BindProperty]
+    public double CoopShipStatsCorrectionModifier { get; set; }
+
+    [BindProperty]
+    public string CombatDifficulty { get; set; } = "Normal";
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -83,5 +117,30 @@ public class IndexModel : PageModel
             cancellationToken);
         State = await _worlds.GetStateAsync(cancellationToken);
         return Page();
+    }
+
+    public async Task<IActionResult> OnPostSaveWorldSettingsAsync(CancellationToken cancellationToken)
+    {
+        var settings = new WorldSettings(
+            PresetType,
+            SharedQuests,
+            EasyExplore,
+            MobHealthMultiplier,
+            MobDamageMultiplier,
+            ShipsHealthMultiplier,
+            ShipsDamageMultiplier,
+            BoardingDifficultyMultiplier,
+            CoopStatsCorrectionModifier,
+            CoopShipStatsCorrectionModifier,
+            CombatDifficulty);
+
+        LastOperation = await _worlds.UpdateWorldSettingsAsync(WorldId ?? string.Empty, settings, cancellationToken);
+        State = await _worlds.GetStateAsync(cancellationToken);
+        return Page();
+    }
+
+    public string FormatNumber(double value)
+    {
+        return Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.##", CultureInfo.InvariantCulture);
     }
 }

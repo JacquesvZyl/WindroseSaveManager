@@ -12,6 +12,7 @@ It is designed to run beside a Docker Compose Windrose server, especially the ex
 - Add local display labels for saves.
 - Edit session name.
 - Set, replace, or remove the server password.
+- Edit advanced world settings such as world preset, enemy scaling, co-op scaling, and exploration behavior.
 - Back up the current world or `ServerDescription.json` before destructive changes.
 - Stop/start the Windrose Docker Compose service when changes require it.
 
@@ -330,6 +331,72 @@ When you activate a world, the app:
 4. Starts the configured Docker Compose service again.
 
 The app never renames world folders. Windrose world IDs must stay unchanged.
+
+When you edit advanced settings for an inactive world, the app backs up and edits that world without stopping the running server. If you edit the active world, the app stops the configured Docker Compose service first and starts it again afterwards.
+
+## Advanced World Settings
+
+Each world card has an **Advanced World Settings** section. These settings are stored in that world's:
+
+```text
+<ServerRoot>/R5/Saved/SaveProfiles/Default/RocksDB/<game-version>/Worlds/<world-id>/WorldDescription.json
+```
+
+The UI reads and writes:
+
+```json
+{
+  "WorldDescription": {
+    "WorldPresetType": "Custom",
+    "WorldSettings": {
+      "BoolParameters": {},
+      "FloatParameters": {},
+      "TagParameters": {}
+    }
+  }
+}
+```
+
+### Presets
+
+The preset can be:
+
+- `Easy`
+- `Medium`
+- `Hard`
+- `Custom`
+
+Custom parameters only take effect when `WorldPresetType` is `Custom`.
+
+When you choose `Easy`, `Medium`, or `Hard`, the app saves an empty `WorldSettings` object so Windrose uses the selected preset. The custom fields are disabled in the UI and display their default values.
+
+When you choose `Custom`, the custom fields are enabled and saved into `WorldSettings`.
+
+### Restart Behavior
+
+Changing advanced settings for the **active** world stops the configured Docker Compose service, backs up the world, writes the settings, and starts the service again.
+
+Changing advanced settings for an **inactive** world backs up and edits only that inactive world. The running Windrose server is not stopped or restarted.
+
+### Tooltips
+
+Hover over or keyboard-focus the `?` icon beside each advanced setting in the UI to see what it does.
+
+### Available Parameters
+
+Number fields allow up to 2 decimal places. The app clamps values to the supported range before writing them.
+
+| UI label | Windrose parameter key | Default | Range | Description |
+| --- | --- | --- | --- | --- |
+| Shared co-op quests | `WDS.Parameter.Coop.SharedQuests` | `true` | `true` / `false` | When a player completes a co-op quest, it auto-completes for all players who have it active. |
+| Immersive exploration | `WDS.Parameter.EasyExplore` | `false` | `true` / `false` | Hides map markers for points of interest, making exploration harder. Called Immersive Exploration in-game. |
+| Enemy health | `WDS.Parameter.MobHealthMultiplier` | `1.0` | `0.2` - `5.0` | Enemy health multiplier. |
+| Enemy damage | `WDS.Parameter.MobDamageMultiplier` | `1.0` | `0.2` - `5.0` | Enemy damage multiplier. |
+| Enemy ship health | `WDS.Parameter.ShipsHealthMultiplier` | `1.0` | `0.4` - `5.0` | Enemy ship health multiplier. |
+| Enemy ship damage | `WDS.Parameter.ShipsDamageMultiplier` | `1.0` | `0.2` - `2.5` | Enemy ship damage multiplier. |
+| Boarding difficulty | `WDS.Parameter.BoardingDifficultyMultiplier` | `1.0` | `0.2` - `5.0` | How many enemy sailors must be defeated to win a boarding action. |
+| Co-op enemy scaling | `WDS.Parameter.Coop.StatsCorrectionModifier` | `1.0` | `0.0` - `2.0` | Adjusts enemy health and posture loss based on player count. |
+| Co-op ship scaling | `WDS.Parameter.Coop.ShipStatsCorrectionModifier` | `0.0` | `0.0` - `2.0` | Adjusts enemy ship health based on player count. |
 
 ## World Names And Labels
 

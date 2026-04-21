@@ -7,6 +7,17 @@ namespace WindroseSaveManager;
 
 public sealed class WindroseWorldService
 {
+    private const string SharedQuestsKey = "{\"TagName\": \"WDS.Parameter.Coop.SharedQuests\"}";
+    private const string EasyExploreKey = "{\"TagName\": \"WDS.Parameter.EasyExplore\"}";
+    private const string MobHealthKey = "{\"TagName\": \"WDS.Parameter.MobHealthMultiplier\"}";
+    private const string MobDamageKey = "{\"TagName\": \"WDS.Parameter.MobDamageMultiplier\"}";
+    private const string ShipsHealthKey = "{\"TagName\": \"WDS.Parameter.ShipsHealthMultiplier\"}";
+    private const string ShipsDamageKey = "{\"TagName\": \"WDS.Parameter.ShipsDamageMultiplier\"}";
+    private const string BoardingDifficultyKey = "{\"TagName\": \"WDS.Parameter.BoardingDifficultyMultiplier\"}";
+    private const string CoopStatsKey = "{\"TagName\": \"WDS.Parameter.Coop.StatsCorrectionModifier\"}";
+    private const string CoopShipStatsKey = "{\"TagName\": \"WDS.Parameter.Coop.ShipStatsCorrectionModifier\"}";
+    private const string CombatDifficultyKey = "{\"TagName\": \"WDS.Parameter.CombatDifficulty\"}";
+
     private readonly WindroseOptions _options;
     private readonly CommandRunner _commands;
     private readonly ILogger<WindroseWorldService> _logger;
@@ -59,6 +70,9 @@ public sealed class WindroseWorldService
             var name = File.Exists(descriptionPath)
                 ? await ReadJsonValueAsync(descriptionPath, "WorldName", cancellationToken)
                 : null;
+            var worldSettings = File.Exists(descriptionPath)
+                ? await ReadWorldSettingsAsync(descriptionPath, cancellationToken)
+                : DefaultWorldSettings();
             labels.TryGetValue(id, out var alias);
             var displayName = string.IsNullOrWhiteSpace(alias) ? name : alias;
 
@@ -67,6 +81,7 @@ public sealed class WindroseWorldService
                 string.IsNullOrWhiteSpace(displayName) ? id : displayName,
                 string.IsNullOrWhiteSpace(name) ? null : name,
                 string.IsNullOrWhiteSpace(alias) ? null : alias,
+                worldSettings,
                 Path.GetFileName(Path.GetDirectoryName(worldsRoot)) ?? "unknown",
                 worldDirectory,
                 string.Equals(id, activeWorldId, StringComparison.OrdinalIgnoreCase),
@@ -272,6 +287,74 @@ public sealed class WindroseWorldService
         return new OperationResult(true, string.IsNullOrWhiteSpace(alias) ? "Label removed." : "Label saved.");
     }
 
+    public async Task<OperationResult> UpdateWorldSettingsAsync(
+        string worldId,
+        WorldSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(worldId))
+        {
+            return new OperationResult(false, "Choose a world first.");
+        }
+
+        var state = await GetStateAsync(cancellationToken);
+        var world = state.Worlds.FirstOrDefault(item =>
+            string.Equals(item.Id, worldId, StringComparison.OrdinalIgnoreCase));
+
+        if (world is null)
+        {
+            return new OperationResult(false, $"World '{worldId}' was not found.");
+        }
+
+        var validation = ValidateWorldSettings(settings);
+        if (validation is not null)
+        {
+            return new OperationResult(false, validation);
+        }
+
+        var shouldRestartContainer = _options.ManageContainer && world.IsActive;
+
+        if (shouldRestartContainer)
+        {
+            var stop = await RunComposeAsync("stop", cancellationToken);
+            if (!stop.Succeeded)
+            {
+                return new OperationResult(false, $"Could not stop the Windrose container. {stop.ErrorOrOutput}");
+            }
+        }
+
+        try
+        {
+            var backupPath = await BackupWorldAsync(world, "world-settings", cancellationToken);
+            var descriptionPath = Path.Combine(world.Path, "WorldDescription.json");
+            var root = await ReadJsonAsync(descriptionPath, cancellationToken);
+
+            WriteWorldSettings(root, settings);
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            await File.WriteAllTextAsync(descriptionPath, root.ToJsonString(options), cancellationToken);
+
+            if (shouldRestartContainer)
+            {
+                var start = await RunComposeAsync("up -d", cancellationToken);
+                if (!start.Succeeded)
+                {
+                    return new OperationResult(false, $"World settings were saved, but the container did not start. {start.ErrorOrOutput}");
+                }
+            }
+
+            var restartMessage = shouldRestartContainer
+                ? "The active server was restarted."
+                : "The running server was not restarted because this world is inactive.";
+            return new OperationResult(true, $"Saved settings for {world.Name}. {restartMessage} Backup saved to {backupPath}.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update world settings for {WorldId}", world.Id);
+            return new OperationResult(false, ex.Message);
+        }
+    }
+
     public async Task<OperationResult> ActivateWorldAsync(string worldId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(worldId))
@@ -360,6 +443,25 @@ public sealed class WindroseWorldService
         return backupPath;
     }
 
+    private async Task<string> BackupWorldAsync(WorldInfo world, string suffix, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_options.BackupsRoot);
+
+        var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var backupName = SanitizeFileName($"{stamp}-{world.Name}-{suffix}");
+        var backupPath = Path.Combine(_options.BackupsRoot, backupName);
+        Directory.CreateDirectory(backupPath);
+
+        CopyDirectory(world.Path, Path.Combine(backupPath, world.Id), cancellationToken);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(backupPath, "backup-info.txt"),
+            $"CreatedUtc={DateTimeOffset.UtcNow:O}{Environment.NewLine}WorldId={world.Id}{Environment.NewLine}Type={suffix}{Environment.NewLine}",
+            cancellationToken);
+
+        return backupPath;
+    }
+
     private async Task<string> BackupServerDescriptionAsync(CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_options.BackupsRoot);
@@ -416,6 +518,128 @@ public sealed class WindroseWorldService
             string.IsNullOrWhiteSpace(serverName) ? null : serverName,
             isPasswordProtected,
             !string.IsNullOrEmpty(password));
+    }
+
+    private async Task<WorldSettings> ReadWorldSettingsAsync(string descriptionPath, CancellationToken cancellationToken)
+    {
+        var root = await ReadJsonAsync(descriptionPath, cancellationToken);
+        var description = GetWorldDescriptionObject(root);
+        var preset = NormalizePreset(ReadString(description, "WorldPresetType"));
+        if (!preset.Equals("Custom", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultWorldSettings(preset);
+        }
+
+        var settings = description["WorldSettings"] as JsonObject;
+        var boolParameters = settings?["BoolParameters"] as JsonObject;
+        var floatParameters = settings?["FloatParameters"] as JsonObject;
+        var tagParameters = settings?["TagParameters"] as JsonObject;
+
+        var combatDifficulty = "Normal";
+        if (tagParameters?[CombatDifficultyKey] is JsonObject combatNode)
+        {
+            combatDifficulty = ShortCombatDifficulty(ReadString(combatNode, "TagName"));
+        }
+
+        return new WorldSettings(
+            preset,
+            ReadBool(boolParameters, SharedQuestsKey, true),
+            ReadBool(boolParameters, EasyExploreKey, false),
+            ReadDouble(floatParameters, MobHealthKey, 1.0),
+            ReadDouble(floatParameters, MobDamageKey, 1.0),
+            ReadDouble(floatParameters, ShipsHealthKey, 1.0),
+            ReadDouble(floatParameters, ShipsDamageKey, 1.0),
+            ReadDouble(floatParameters, BoardingDifficultyKey, 1.0),
+            ReadDouble(floatParameters, CoopStatsKey, 1.0),
+            ReadDouble(floatParameters, CoopShipStatsKey, 0.0),
+            combatDifficulty);
+    }
+
+    private static WorldSettings DefaultWorldSettings()
+    {
+        return DefaultWorldSettings("Medium");
+    }
+
+    private static WorldSettings DefaultWorldSettings(string preset)
+    {
+        return new WorldSettings(preset, true, false, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, "Normal");
+    }
+
+    private static void WriteWorldSettings(JsonNode root, WorldSettings settings)
+    {
+        var description = GetWorldDescriptionObject(root);
+        var preset = NormalizePreset(settings.PresetType);
+        description["WorldPresetType"] = preset;
+
+        if (!preset.Equals("Custom", StringComparison.OrdinalIgnoreCase))
+        {
+            description["WorldSettings"] = new JsonObject
+            {
+                ["BoolParameters"] = new JsonObject(),
+                ["FloatParameters"] = new JsonObject(),
+                ["TagParameters"] = new JsonObject()
+            };
+            return;
+        }
+
+        description["WorldSettings"] = new JsonObject
+        {
+            ["BoolParameters"] = new JsonObject
+            {
+                [SharedQuestsKey] = settings.SharedQuests,
+                [EasyExploreKey] = settings.EasyExplore
+            },
+            ["FloatParameters"] = new JsonObject
+            {
+                [MobHealthKey] = ClampAndRound(settings.MobHealthMultiplier, 0.2, 5.0),
+                [MobDamageKey] = ClampAndRound(settings.MobDamageMultiplier, 0.2, 5.0),
+                [ShipsHealthKey] = ClampAndRound(settings.ShipsHealthMultiplier, 0.4, 5.0),
+                [ShipsDamageKey] = ClampAndRound(settings.ShipsDamageMultiplier, 0.2, 2.5),
+                [BoardingDifficultyKey] = ClampAndRound(settings.BoardingDifficultyMultiplier, 0.2, 5.0),
+                [CoopStatsKey] = ClampAndRound(settings.CoopStatsCorrectionModifier, 0.0, 2.0),
+                [CoopShipStatsKey] = ClampAndRound(settings.CoopShipStatsCorrectionModifier, 0.0, 2.0)
+            },
+            ["TagParameters"] = new JsonObject
+            {
+                [CombatDifficultyKey] = new JsonObject
+                {
+                    ["TagName"] = $"WDS.Parameter.CombatDifficulty.{NormalizeCombatDifficulty(settings.CombatDifficulty)}"
+                }
+            }
+        };
+    }
+
+    private static string? ValidateWorldSettings(WorldSettings settings)
+    {
+        var preset = NormalizePreset(settings.PresetType);
+        if (!IsOneOf(preset, "Easy", "Medium", "Hard", "Custom"))
+        {
+            return "World preset must be Easy, Medium, Hard, or Custom.";
+        }
+
+        if (!IsOneOf(NormalizeCombatDifficulty(settings.CombatDifficulty), "Easy", "Normal", "Hard"))
+        {
+            return "Combat difficulty must be Easy, Normal, or Hard.";
+        }
+
+        return null;
+    }
+
+    private static JsonObject GetWorldDescriptionObject(JsonNode root)
+    {
+        if (root is not JsonObject rootObject)
+        {
+            throw new InvalidOperationException("WorldDescription.json must contain a JSON object.");
+        }
+
+        if (rootObject["WorldDescription"] is JsonObject description)
+        {
+            return description;
+        }
+
+        var newDescription = new JsonObject();
+        rootObject["WorldDescription"] = newDescription;
+        return newDescription;
     }
 
     private string GetServerDescriptionPath()
@@ -639,6 +863,70 @@ public sealed class WindroseWorldService
         }
 
         return false;
+    }
+
+    private static string? ReadString(JsonObject? obj, string propertyName)
+    {
+        return obj is not null &&
+            obj[propertyName] is JsonNode node &&
+            node.GetValueKind() == JsonValueKind.String
+                ? node.GetValue<string>()
+                : null;
+    }
+
+    private static bool ReadBool(JsonObject? obj, string key, bool defaultValue)
+    {
+        return obj is not null &&
+            obj[key] is JsonNode node &&
+            node.GetValueKind() is JsonValueKind.True or JsonValueKind.False
+                ? node.GetValue<bool>()
+                : defaultValue;
+    }
+
+    private static double ReadDouble(JsonObject? obj, string key, double defaultValue)
+    {
+        return obj is not null &&
+            obj[key] is JsonNode node &&
+            node.GetValueKind() is JsonValueKind.Number
+                ? node.GetValue<double>()
+                : defaultValue;
+    }
+
+    private static double ClampAndRound(double value, double min, double max)
+    {
+        return Math.Round(Math.Min(Math.Max(value, min), max), 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static bool IsOneOf(string value, params string[] allowed)
+    {
+        return allowed.Any(item => item.Equals(value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizePreset(string? value)
+    {
+        return NormalizeChoice(value, "Medium", "Easy", "Medium", "Hard", "Custom");
+    }
+
+    private static string NormalizeCombatDifficulty(string? value)
+    {
+        return NormalizeChoice(ShortCombatDifficulty(value), "Normal", "Easy", "Normal", "Hard");
+    }
+
+    private static string ShortCombatDifficulty(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Normal";
+        }
+
+        var lastDot = value.LastIndexOf('.');
+        return lastDot >= 0 ? value[(lastDot + 1)..] : value;
+    }
+
+    private static string NormalizeChoice(string? value, string fallback, params string[] allowed)
+    {
+        var candidate = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        return allowed.FirstOrDefault(item => item.Equals(candidate, StringComparison.OrdinalIgnoreCase)) ?? fallback;
     }
 
     private async Task<CommandResult> RunComposeAsync(string action, CancellationToken cancellationToken)
