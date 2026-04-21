@@ -14,7 +14,6 @@ It is designed to run beside a Docker Compose Windrose server, especially the ex
 - Set, replace, or remove the server password.
 - Back up the current world or `ServerDescription.json` before destructive changes.
 - Stop/start the Windrose Docker Compose service when changes require it.
-- Show a loading screen while long-running actions complete.
 
 ## Security Warning
 
@@ -29,9 +28,27 @@ Run it on a trusted LAN only unless you put it behind real access control such a
 
 Do not expose it directly to the public internet.
 
-## Supported Layout
+## How Users Should Run It
 
-The default configuration expects:
+Recommended setup:
+
+```text
+/opt/windrose
+  docker-compose.yml
+  .env
+  server-files/
+
+/opt/windrose-save-manager
+  WindroseSaveManager.dll
+  appsettings.json
+  windrose-save-manager.service
+```
+
+Windrose Save Manager does not replace your Windrose Docker setup. It is a companion admin app that reads/writes the mounted `server-files` folder and controls your existing Docker Compose service.
+
+## Supported Windrose Docker Layout
+
+The default configuration expects this layout:
 
 ```text
 /opt/windrose/docker-compose.yml
@@ -40,7 +57,7 @@ The default configuration expects:
 /opt/windrose/server-files/R5/Saved/SaveProfiles/Default/RocksDB/<game-version>/Worlds
 ```
 
-Example Windrose Docker Compose service:
+Example `docker-compose.yml`:
 
 ```yaml
 services:
@@ -57,17 +74,19 @@ services:
       - ./server-files:/home/steam/server-files
 ```
 
+If your paths are different, configure them with environment variables. See [Configuration](#configuration).
+
 ## Important Docker Image Setting
 
-If you use `indifferentbroccoli/windrose-server-docker`, the container can generate/patch settings from `.env` on startup.
+If you use `indifferentbroccoli/windrose-server-docker`, the container can generate or patch settings from `.env` on startup.
 
-After your first successful server start, consider setting:
+After your first successful server start, consider setting this in `/opt/windrose/.env`:
 
 ```env
 GENERATE_SETTINGS=false
 ```
 
-This prevents container startup from overwriting changes made by Windrose Save Manager to:
+This prevents the container startup process from overwriting changes made by Windrose Save Manager to:
 
 ```text
 /opt/windrose/server-files/R5/ServerDescription.json
@@ -75,40 +94,31 @@ This prevents container startup from overwriting changes made by Windrose Save M
 
 You can still keep other `.env` values for the Docker container itself.
 
-## Quick Start
+## Step By Step Install
 
-On your Windrose LXC/server:
+### 1. Prepare The Windrose Server
+
+On your Windrose LXC/server, confirm Docker Compose can see your server:
+
+```bash
+cd /opt/windrose
+docker compose ps
+```
+
+Confirm your server files exist:
+
+```bash
+ls -la /opt/windrose/server-files/R5
+ls -la /opt/windrose/server-files/R5/Saved/SaveProfiles/Default/RocksDB
+```
+
+Create the app install folder:
 
 ```bash
 mkdir -p /opt/windrose-save-manager
 ```
 
-On your development machine:
-
-```bash
-git clone https://github.com/JacquesvZyl/WindroseSaveManager.git
-cd WindroseSaveManager
-dotnet publish -c Release -o ./publish
-scp -r ./publish/* root@<LXC-LAN-IP>:/opt/windrose-save-manager/
-scp ./windrose-save-manager.service root@<LXC-LAN-IP>:/opt/windrose-save-manager/
-```
-
-On your Windrose LXC/server:
-
-```bash
-cd /opt/windrose-save-manager
-ASPNETCORE_URLS=http://0.0.0.0:5085 dotnet WindroseSaveManager.dll
-```
-
-Open:
-
-```text
-http://<LXC-LAN-IP>:5085
-```
-
-Stop the manual run with `Ctrl+C` before installing the systemd service.
-
-## Install .NET Runtime
+### 2. Install .NET Runtime
 
 Check if .NET is installed:
 
@@ -129,46 +139,80 @@ apt-get install -y aspnetcore-runtime-9.0
 
 If you are on another distro, install the ASP.NET Core 9 runtime using Microsoft's package instructions for your OS.
 
-## Configuration
+### 3. Publish The App
 
-Defaults live in `appsettings.json`:
-
-```json
-{
-  "Windrose": {
-    "ServerRoot": "/opt/windrose/server-files",
-    "ComposeDirectory": "/opt/windrose",
-    "ComposeFile": "/opt/windrose/docker-compose.yml",
-    "ServiceName": "windrose",
-    "BackupsRoot": "/opt/windrose/world-backups",
-    "LabelsPath": "/opt/windrose/world-labels.json",
-    "DockerCommand": "docker",
-    "ManageContainer": true
-  }
-}
-```
-
-Override with environment variables:
+On your development machine:
 
 ```bash
-export Windrose__ServerRoot=/opt/windrose/server-files
-export Windrose__ComposeDirectory=/opt/windrose
-export Windrose__ComposeFile=/opt/windrose/docker-compose.yml
-export Windrose__ServiceName=windrose
-export Windrose__BackupsRoot=/opt/windrose/world-backups
-export Windrose__LabelsPath=/opt/windrose/world-labels.json
-export Windrose__ManageContainer=true
+git clone https://github.com/JacquesvZyl/WindroseSaveManager.git
+cd WindroseSaveManager
+dotnet publish -c Release -o ./publish
 ```
 
-## systemd Service
+Copy the app to your Windrose LXC/server:
 
-The included service file runs the app on:
+```bash
+scp -r ./publish/* root@<LXC-LAN-IP>:/opt/windrose-save-manager/
+scp ./windrose-save-manager.service root@<LXC-LAN-IP>:/opt/windrose-save-manager/
+scp ./windrose-save-manager.env.example root@<LXC-LAN-IP>:/opt/windrose-save-manager/
+```
+
+### 4. Configure Paths
+
+If you use the default `/opt/windrose` layout, the app works without extra configuration.
+
+For custom paths, create an environment file:
+
+```bash
+cp /opt/windrose-save-manager/windrose-save-manager.env.example /etc/default/windrose-save-manager
+nano /etc/default/windrose-save-manager
+```
+
+Set the values for your server. Every app path has a default and can be overwritten here:
+
+```env
+Windrose__ServerRoot=/opt/windrose/server-files
+Windrose__ComposeDirectory=/opt/windrose
+Windrose__ComposeFile=/opt/windrose/docker-compose.yml
+Windrose__ServiceName=windrose
+Windrose__BackupsRoot=/opt/windrose/world-backups
+Windrose__LabelsPath=/opt/windrose/world-labels.json
+Windrose__DockerCommand=docker
+Windrose__ManageContainer=true
+ASPNETCORE_URLS=http://0.0.0.0:5085
+```
+
+The systemd service file itself defaults to this app install folder:
 
 ```text
-http://0.0.0.0:5085
+/opt/windrose-save-manager
 ```
 
-Install it:
+If you install the app somewhere else, edit these two lines in `/etc/systemd/system/windrose-save-manager.service`:
+
+```ini
+WorkingDirectory=/opt/windrose-save-manager
+ExecStart=/usr/bin/dotnet /opt/windrose-save-manager/WindroseSaveManager.dll
+```
+
+### 5. Test Manual Run
+
+Run the app manually first:
+
+```bash
+cd /opt/windrose-save-manager
+ASPNETCORE_URLS=http://0.0.0.0:5085 dotnet WindroseSaveManager.dll
+```
+
+Open:
+
+```text
+http://<LXC-LAN-IP>:5085
+```
+
+Stop the manual run with `Ctrl+C` before installing the systemd service.
+
+### 6. Install The systemd Service
 
 ```bash
 sudo cp /opt/windrose-save-manager/windrose-save-manager.service /etc/systemd/system/windrose-save-manager.service
@@ -182,15 +226,47 @@ Open:
 http://<LXC-LAN-IP>:5085
 ```
 
-Useful commands:
+### 7. Check Status And Logs
 
 ```bash
 systemctl status windrose-save-manager
 journalctl -u windrose-save-manager -f
+```
+
+## Configuration
+
+Defaults live in `appsettings.json` and can be overridden with environment variables or `/etc/default/windrose-save-manager`.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `Windrose__ServerRoot` | `/opt/windrose/server-files` | Host path where Windrose server files are mounted. This folder should contain `R5/ServerDescription.json`. |
+| `Windrose__ComposeDirectory` | `/opt/windrose` | Directory where Docker Compose commands are run. |
+| `Windrose__ComposeFile` | `/opt/windrose/docker-compose.yml` | Full path to the Windrose Docker Compose file. |
+| `Windrose__ServiceName` | `windrose` | Docker Compose service name to stop/start. |
+| `Windrose__BackupsRoot` | `/opt/windrose/world-backups` | Folder where world and config backups are written. |
+| `Windrose__LabelsPath` | `/opt/windrose/world-labels.json` | JSON file where optional local world labels are stored. |
+| `Windrose__DockerCommand` | `docker` | Docker executable name or full path. |
+| `Windrose__ManageContainer` | `true` | If `true`, stop/start the Compose service for changes. If `false`, only edit files. |
+| `ASPNETCORE_URLS` | `http://0.0.0.0:5085` | Web UI bind address and port. |
+
+Example `/etc/default/windrose-save-manager`:
+
+```env
+Windrose__ServerRoot=/srv/windrose/server-files
+Windrose__ComposeDirectory=/srv/windrose
+Windrose__ComposeFile=/srv/windrose/docker-compose.yml
+Windrose__ServiceName=windrose
+Windrose__BackupsRoot=/srv/windrose/backups
+Windrose__LabelsPath=/srv/windrose/world-labels.json
+Windrose__DockerCommand=docker
+Windrose__ManageContainer=true
+ASPNETCORE_URLS=http://0.0.0.0:5085
+```
+
+After changing `/etc/default/windrose-save-manager`, restart:
+
+```bash
 sudo systemctl restart windrose-save-manager
-sudo systemctl stop windrose-save-manager
-sudo systemctl start windrose-save-manager
-sudo systemctl disable --now windrose-save-manager
 ```
 
 ## Updating
@@ -198,10 +274,12 @@ sudo systemctl disable --now windrose-save-manager
 From your development machine:
 
 ```bash
+cd WindroseSaveManager
 git pull
 dotnet publish -c Release -o ./publish
 scp -r ./publish/* root@<LXC-LAN-IP>:/opt/windrose-save-manager/
 scp ./windrose-save-manager.service root@<LXC-LAN-IP>:/opt/windrose-save-manager/
+scp ./windrose-save-manager.env.example root@<LXC-LAN-IP>:/opt/windrose-save-manager/
 ```
 
 On the LXC/server:
@@ -215,12 +293,23 @@ journalctl -u windrose-save-manager -f
 
 If the browser still shows the old UI, hard-refresh the page.
 
+## Useful Service Commands
+
+```bash
+systemctl status windrose-save-manager
+journalctl -u windrose-save-manager -f
+sudo systemctl restart windrose-save-manager
+sudo systemctl stop windrose-save-manager
+sudo systemctl start windrose-save-manager
+sudo systemctl disable --now windrose-save-manager
+```
+
 ## How World Switching Works
 
 Windrose chooses the active world from:
 
 ```text
-/opt/windrose/server-files/R5/ServerDescription.json
+<ServerRoot>/R5/ServerDescription.json
 ```
 
 Specifically:
@@ -235,10 +324,10 @@ Specifically:
 
 When you activate a world, the app:
 
-1. Stops the `windrose` Docker Compose service.
-2. Backs up the current active world.
+1. Stops the configured Docker Compose service if `Windrose__ManageContainer=true`.
+2. Backs up the current active world into `Windrose__BackupsRoot`.
 3. Updates `WorldIslandId`.
-4. Starts the `windrose` service again.
+4. Starts the configured Docker Compose service again.
 
 The app never renames world folders. Windrose world IDs must stay unchanged.
 
@@ -257,11 +346,7 @@ Windrose stores the friendly world name in each world's `WorldDescription.json`:
 
 The app displays `WorldName` by default.
 
-If you want a clearer admin label, save one in the UI. Labels are stored outside the save itself:
-
-```text
-/opt/windrose/world-labels.json
-```
+If you want a clearer admin label, save one in the UI. Labels are stored outside the save itself at `Windrose__LabelsPath`.
 
 ## Importing World Zips
 
@@ -281,7 +366,7 @@ The app validates:
 - The world does not already exist on the server.
 - The zip does not contain unsafe paths.
 
-Imported worlds are extracted into the active `Worlds` directory.
+Imported worlds are extracted into the latest `RocksDB/<game-version>/Worlds` directory under `Windrose__ServerRoot`.
 
 ## Session Name And Password
 
@@ -299,10 +384,10 @@ The app can update:
 
 Windrose expects `ServerDescription.json` to be changed while the server is stopped. When you save server settings, the app:
 
-1. Stops the `windrose` Docker Compose service.
-2. Backs up the current `ServerDescription.json`.
+1. Stops the configured Docker Compose service if `Windrose__ManageContainer=true`.
+2. Backs up the current `ServerDescription.json` into `Windrose__BackupsRoot`.
 3. Updates only the checked settings.
-4. Starts the `windrose` service again.
+4. Starts the configured Docker Compose service again.
 
 The form is intentionally explicit:
 
@@ -319,18 +404,18 @@ Blank password fields do not overwrite an existing password unless you explicitl
 The app runs:
 
 ```bash
-docker compose stop windrose
-docker compose up -d windrose
+docker compose -f <ComposeFile> stop <ServiceName>
+docker compose -f <ComposeFile> up -d <ServiceName>
 ```
 
 The included systemd service runs as `root` because many LXC-based Docker installs are administered as root.
 
 If you prefer a dedicated user, make sure that user can:
 
-- Read and write `/opt/windrose/server-files`.
-- Read and write `/opt/windrose/world-backups`.
-- Read and write `/opt/windrose/world-labels.json`.
-- Run Docker Compose for `/opt/windrose/docker-compose.yml`.
+- Read and write `Windrose__ServerRoot`.
+- Read and write `Windrose__BackupsRoot`.
+- Read and write `Windrose__LabelsPath`.
+- Run Docker Compose for `Windrose__ComposeFile`.
 
 ## Troubleshooting
 
@@ -341,9 +426,10 @@ systemctl status windrose-save-manager
 journalctl -u windrose-save-manager -f
 ```
 
-If the app cannot find worlds:
+Check configured paths:
 
 ```bash
+cat /etc/default/windrose-save-manager
 ls -la /opt/windrose
 ls -la /opt/windrose/server-files/R5
 ls -la /opt/windrose/server-files/R5/Saved/SaveProfiles/Default/RocksDB
@@ -364,16 +450,15 @@ If port `5085` is already in use:
 ss -ltnp | grep 5085
 ```
 
-Change the port in `/etc/systemd/system/windrose-save-manager.service`:
+Change the port in `/etc/default/windrose-save-manager`:
 
-```ini
-Environment=ASPNETCORE_URLS=http://0.0.0.0:5086
+```env
+ASPNETCORE_URLS=http://0.0.0.0:5086
 ```
 
-Then reload and restart:
+Then restart:
 
 ```bash
-sudo systemctl daemon-reload
 sudo systemctl restart windrose-save-manager
 ```
 

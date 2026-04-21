@@ -11,6 +11,7 @@ ExecStart=/usr/bin/dotnet /opt/windrose-save-manager/WindroseSaveManager.dll
 Restart=always
 RestartSec=5
 User=root
+EnvironmentFile=-/etc/default/windrose-save-manager
 Environment=ASPNETCORE_URLS=http://0.0.0.0:5085
 Environment=DOTNET_ENVIRONMENT=Production
 
