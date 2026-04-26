@@ -435,14 +435,17 @@ The app validates:
 
 Imported worlds are extracted into the latest `RocksDB/<game-version>/Worlds` directory under `Windrose__ServerRoot`.
 
-## Session Name And Password
+## Server Settings
 
 The app can update:
 
 ```json
 {
   "ServerDescription_Persistent": {
+    "InviteCode": "myfriends",
     "ServerName": "My Windrose Server",
+    "MaxPlayerCount": 10,
+    "P2pProxyAddress": "127.0.0.1",
     "IsPasswordProtected": true,
     "Password": "example-password"
   }
@@ -458,13 +461,31 @@ Windrose expects `ServerDescription.json` to be changed while the server is stop
 
 The form is intentionally explicit:
 
+- Check `Update invite code` to overwrite `InviteCode`.
+- Leave it unchecked to preserve the current invite code.
 - Check `Update session name` to overwrite `ServerName`.
 - Leave it unchecked to preserve the current session name.
+- Check `Update max players` to overwrite `MaxPlayerCount`.
+- Leave it unchecked to preserve the current player limit.
+- Check `Update P2P proxy address` to overwrite `P2pProxyAddress`.
+- Leave it unchecked to preserve the current socket bind address.
 - Check `Set or replace password` and enter a password to overwrite the password.
 - Leave it unchecked to preserve the current password.
 - Check `Remove password protection` to clear `Password` and set `IsPasswordProtected` to `false`.
 
 Blank password fields do not overwrite an existing password unless you explicitly choose `Remove password protection`.
+
+`WorldIslandId` is still managed by the Activate action on each world card. Internal fields like `PersistentServerId`, `Version`, and `DeploymentId` are shown by Windrose but are not edited by the app.
+
+## Downloading Saves
+
+Each world card includes a `Download Save` link. The app zips that world's full folder on demand and downloads it as:
+
+```text
+<world-name>-<world-id>.zip
+```
+
+The archive keeps the expected top-level world folder so it can be re-imported through the app later.
 
 ## Docker Permissions
 

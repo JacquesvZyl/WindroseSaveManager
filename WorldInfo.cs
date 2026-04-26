@@ -21,7 +21,10 @@ public sealed record SaveManagerState(
     IReadOnlyList<string> Warnings);
 
 public sealed record ServerSettings(
+    string? InviteCode,
     string? ServerName,
+    int? MaxPlayerCount,
+    string? P2pProxyAddress,
     bool IsPasswordProtected,
     bool HasPassword);
 
@@ -39,3 +42,5 @@ public sealed record WorldSettings(
     string CombatDifficulty);
 
 public sealed record OperationResult(bool Succeeded, string Message);
+
+public sealed record WorldArchive(string FileName, byte[] Content);

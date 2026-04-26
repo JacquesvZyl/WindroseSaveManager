@@ -41,7 +41,7 @@ public sealed class WindroseWorldService
             : null;
         var settings = File.Exists(serverDescriptionPath)
             ? await ReadServerSettingsAsync(serverDescriptionPath, cancellationToken)
-            : new ServerSettings(null, false, false);
+            : new ServerSettings(null, null, null, null, false, false);
 
         if (!File.Exists(serverDescriptionPath))
         {
@@ -93,16 +93,59 @@ public sealed class WindroseWorldService
     }
 
     public async Task<OperationResult> UpdateServerSettingsAsync(
+        string? inviteCode,
+        bool updateInviteCode,
         string? serverName,
         bool updateServerName,
+        int? maxPlayerCount,
+        bool updateMaxPlayerCount,
+        string? p2pProxyAddress,
+        bool updateP2pProxyAddress,
         string? password,
         bool updatePassword,
         bool clearPassword,
         CancellationToken cancellationToken)
     {
-        if (!updateServerName && !updatePassword && !clearPassword)
+        if (!updateInviteCode && !updateServerName && !updateMaxPlayerCount && !updateP2pProxyAddress && !updatePassword && !clearPassword)
         {
             return new OperationResult(false, "Choose at least one setting to update.");
+        }
+
+        if (updateInviteCode)
+        {
+            inviteCode = inviteCode?.Trim();
+            if (string.IsNullOrWhiteSpace(inviteCode))
+            {
+                return new OperationResult(false, "Enter an invite code.");
+            }
+
+            if (inviteCode.Length < 6 || inviteCode.Length > 32)
+            {
+                return new OperationResult(false, "Invite code must be 6 to 32 characters.");
+            }
+
+            if (inviteCode.Any(ch => !char.IsAsciiLetterOrDigit(ch)))
+            {
+                return new OperationResult(false, "Invite code may only contain 0-9, a-z, and A-Z.");
+            }
+        }
+
+        if (updateMaxPlayerCount)
+        {
+            if (maxPlayerCount is null)
+            {
+                return new OperationResult(false, "Enter a max player count.");
+            }
+
+            if (maxPlayerCount < 1 || maxPlayerCount > 64)
+            {
+                return new OperationResult(false, "Max player count must be between 1 and 64.");
+            }
+        }
+
+        if (updateP2pProxyAddress && string.IsNullOrWhiteSpace(p2pProxyAddress))
+        {
+            return new OperationResult(false, "Enter a P2P proxy address.");
         }
 
         if (updatePassword && clearPassword)
@@ -135,9 +178,24 @@ public sealed class WindroseWorldService
             var backupPath = await BackupServerDescriptionAsync(cancellationToken);
             var root = await ReadJsonAsync(serverDescriptionPath, cancellationToken);
 
+            if (updateInviteCode)
+            {
+                SetServerDescriptionValue(root, "InviteCode", inviteCode);
+            }
+
             if (updateServerName)
             {
                 SetServerDescriptionValue(root, "ServerName", serverName?.Trim() ?? string.Empty);
+            }
+
+            if (updateMaxPlayerCount)
+            {
+                SetServerDescriptionValue(root, "MaxPlayerCount", maxPlayerCount);
+            }
+
+            if (updateP2pProxyAddress)
+            {
+                SetServerDescriptionValue(root, "P2pProxyAddress", p2pProxyAddress?.Trim());
             }
 
             if (clearPassword)
@@ -415,6 +473,32 @@ public sealed class WindroseWorldService
         return new OperationResult(true, $"Backup saved to {backupPath}.");
     }
 
+    public async Task<WorldArchive?> CreateWorldArchiveAsync(string worldId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(worldId))
+        {
+            return null;
+        }
+
+        var state = await GetStateAsync(cancellationToken);
+        var world = state.Worlds.FirstOrDefault(item =>
+            string.Equals(item.Id, worldId, StringComparison.OrdinalIgnoreCase));
+
+        if (world is null || !Directory.Exists(world.Path))
+        {
+            return null;
+        }
+
+        await using var memory = new MemoryStream();
+        using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddDirectoryToArchive(archive, world.Path, world.Id, cancellationToken);
+        }
+
+        var fileName = $"{SanitizeFileName(world.Name)}-{world.Id}.zip";
+        return new WorldArchive(fileName, memory.ToArray());
+    }
+
     private async Task<string> BackupCurrentAsync(SaveManagerState state, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_options.BackupsRoot);
@@ -510,12 +594,18 @@ public sealed class WindroseWorldService
     private async Task<ServerSettings> ReadServerSettingsAsync(string serverDescriptionPath, CancellationToken cancellationToken)
     {
         var root = await ReadJsonAsync(serverDescriptionPath, cancellationToken);
+        var inviteCode = TryFindJsonValue(root, "InviteCode");
         var serverName = TryFindJsonValue(root, "ServerName");
+        var maxPlayerCount = TryFindJsonInt(root, "MaxPlayerCount");
+        var p2pProxyAddress = TryFindJsonValue(root, "P2pProxyAddress");
         var password = TryFindJsonValue(root, "Password");
         var isPasswordProtected = TryFindJsonBool(root, "IsPasswordProtected") ?? !string.IsNullOrEmpty(password);
 
         return new ServerSettings(
+            string.IsNullOrWhiteSpace(inviteCode) ? null : inviteCode,
             string.IsNullOrWhiteSpace(serverName) ? null : serverName,
+            maxPlayerCount,
+            string.IsNullOrWhiteSpace(p2pProxyAddress) ? null : p2pProxyAddress,
             isPasswordProtected,
             !string.IsNullOrEmpty(password));
     }
@@ -770,6 +860,11 @@ public sealed class WindroseWorldService
         return TryFindJsonBoolValue(node, propertyName, out var value) ? value : null;
     }
 
+    private static int? TryFindJsonInt(JsonNode? node, string propertyName)
+    {
+        return TryFindJsonIntValue(node, propertyName, out var value) ? value : null;
+    }
+
     private static bool TryFindJsonBoolValue(JsonNode? node, string propertyName, out bool value)
     {
         value = false;
@@ -797,6 +892,42 @@ public sealed class WindroseWorldService
             foreach (var item in array)
             {
                 if (TryFindJsonBoolValue(item, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryFindJsonIntValue(JsonNode? node, string propertyName, out int value)
+    {
+        value = 0;
+
+        if (node is JsonObject obj)
+        {
+            foreach (var property in obj)
+            {
+                if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                    property.Value is JsonValue jsonValue &&
+                    jsonValue.GetValueKind() == JsonValueKind.Number &&
+                    jsonValue.TryGetValue<int>(out value))
+                {
+                    return true;
+                }
+
+                if (TryFindJsonIntValue(property.Value, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                if (TryFindJsonIntValue(item, propertyName, out value))
                 {
                     return true;
                 }
@@ -895,6 +1026,19 @@ public sealed class WindroseWorldService
     private static double ClampAndRound(double value, double min, double max)
     {
         return Math.Round(Math.Min(Math.Max(value, min), max), 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static void AddDirectoryToArchive(ZipArchive archive, string sourceDirectory, string rootEntryName, CancellationToken cancellationToken)
+    {
+        foreach (var filePath in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relativePath = Path.GetRelativePath(sourceDirectory, filePath)
+                .Replace(Path.DirectorySeparatorChar, '/')
+                .Replace(Path.AltDirectorySeparatorChar, '/');
+            archive.CreateEntryFromFile(filePath, $"{rootEntryName}/{relativePath}", CompressionLevel.Fastest);
+        }
     }
 
     private static bool IsOneOf(string value, params string[] allowed)

@@ -29,7 +29,25 @@ public class IndexModel : PageModel
     public string? ServerName { get; set; }
 
     [BindProperty]
+    public string? InviteCode { get; set; }
+
+    [BindProperty]
+    public bool UpdateInviteCode { get; set; }
+
+    [BindProperty]
     public bool UpdateServerName { get; set; }
+
+    [BindProperty]
+    public int? MaxPlayerCount { get; set; }
+
+    [BindProperty]
+    public bool UpdateMaxPlayerCount { get; set; }
+
+    [BindProperty]
+    public string? P2pProxyAddress { get; set; }
+
+    [BindProperty]
+    public bool UpdateP2pProxyAddress { get; set; }
 
     [BindProperty]
     public string? ServerPassword { get; set; }
@@ -109,14 +127,31 @@ public class IndexModel : PageModel
     public async Task<IActionResult> OnPostSaveServerSettingsAsync(CancellationToken cancellationToken)
     {
         LastOperation = await _worlds.UpdateServerSettingsAsync(
+            InviteCode,
+            UpdateInviteCode,
             ServerName,
             UpdateServerName,
+            MaxPlayerCount,
+            UpdateMaxPlayerCount,
+            P2pProxyAddress,
+            UpdateP2pProxyAddress,
             ServerPassword,
             UpdatePassword,
             ClearPassword,
             cancellationToken);
         State = await _worlds.GetStateAsync(cancellationToken);
         return Page();
+    }
+
+    public async Task<IActionResult> OnGetDownloadSaveAsync(string? worldId, CancellationToken cancellationToken)
+    {
+        var archive = await _worlds.CreateWorldArchiveAsync(worldId ?? string.Empty, cancellationToken);
+        if (archive is null)
+        {
+            return NotFound();
+        }
+
+        return File(archive.Content, "application/zip", archive.FileName);
     }
 
     public async Task<IActionResult> OnPostSaveWorldSettingsAsync(CancellationToken cancellationToken)

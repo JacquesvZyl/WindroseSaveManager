@@ -62,8 +62,16 @@
         <code>@(Model.State?.WorldsRoot ?? "Not found")</code>
     </div>
     <div>
+        <span>Invite Code</span>
+        <strong>@(Model.State?.Settings.InviteCode ?? "Not set")</strong>
+    </div>
+    <div>
         <span>Session Name</span>
         <strong>@(Model.State?.Settings.ServerName ?? "Not set")</strong>
+    </div>
+    <div>
+        <span>Max Players</span>
+        <strong>@(Model.State?.Settings.MaxPlayerCount?.ToString() ?? "Not set")</strong>
     </div>
     <div>
         <span>Password</span>
@@ -81,10 +89,28 @@
 
     <form method="post" asp-page-handler="SaveServerSettings" data-loading-message="Stopping Windrose, saving server settings, and starting the server again...">
         <label class="check-row">
+            <input type="checkbox" name="UpdateInviteCode" value="true" />
+            <span>Update invite code</span>
+        </label>
+        <input type="text" name="InviteCode" value="@Model.State?.Settings.InviteCode" placeholder="6-32 letters and numbers" />
+
+        <label class="check-row">
             <input type="checkbox" name="UpdateServerName" value="true" />
             <span>Update session name</span>
         </label>
         <input type="text" name="ServerName" value="@Model.State?.Settings.ServerName" placeholder="Windrose session name" />
+
+        <label class="check-row">
+            <input type="checkbox" name="UpdateMaxPlayerCount" value="true" />
+            <span>Update max players</span>
+        </label>
+        <input type="number" name="MaxPlayerCount" min="1" max="64" step="1" value="@Model.State?.Settings.MaxPlayerCount" placeholder="10" />
+
+        <label class="check-row">
+            <input type="checkbox" name="UpdateP2pProxyAddress" value="true" />
+            <span>Update P2P proxy address</span>
+        </label>
+        <input type="text" name="P2pProxyAddress" value="@Model.State?.Settings.P2pProxyAddress" placeholder="127.0.0.1" />
 
         <label class="check-row">
             <input type="checkbox" name="UpdatePassword" value="true" />
@@ -144,17 +170,21 @@
                         <button class="button secondary" type="submit">Save Label</button>
                     </form>
 
-                    @if (world.IsActive)
-                    {
-                        <span class="active-pill">Active</span>
-                    }
-                    else
-                    {
-                        <form method="post" asp-page-handler="Activate" data-loading-message="Switching to @world.Name. Backing up, stopping Windrose, activating the world, and starting the server again...">
-                            <input type="hidden" name="WorldId" value="@world.Id" />
-                            <button class="button" type="submit">Activate</button>
-                        </form>
-                    }
+                    <div class="world-actions">
+                        <a class="button secondary" asp-page-handler="DownloadSave" asp-route-worldId="@world.Id">Download Save</a>
+
+                        @if (world.IsActive)
+                        {
+                            <span class="active-pill">Active</span>
+                        }
+                        else
+                        {
+                            <form method="post" asp-page-handler="Activate" data-loading-message="Switching to @world.Name. Backing up, stopping Windrose, activating the world, and starting the server again...">
+                                <input type="hidden" name="WorldId" value="@world.Id" />
+                                <button class="button" type="submit">Activate</button>
+                            </form>
+                        }
+                    </div>
 
                     <details class="advanced-settings">
                         <summary>Advanced World Settings</summary>
